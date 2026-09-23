@@ -2,13 +2,13 @@
 
 A weather app that goes far beyond temperature and icons — **live sky simulation, sunlight lux intensity, air germ index, pollen, skin/UV exposure, night-sky planet visibility, stargazing scores, migraine risk, rooftop solar yield**, and more. Built with React 19 + Vite + Tailwind CSS v4, powered entirely by **free, keyless APIs**.
 
-![stack](https://img.shields.io/badge/React-19-61dafb) ![vite](https://img.shields.io/badge/Vite-8-646cff) ![tailwind](https://img.shields.io/badge/Tailwind-v4-38bdf8) ![api](https://img.shields.io/badge/APIs-Open--Meteo%20%7C%20aurora.you%20%7C%20skytime-green)
+![React](https://img.shields.io/badge/React-19-61dafb) ![Vite](https://img.shields.io/badge/Vite-8-646cff) ![Tailwind](https://img.shields.io/badge/Tailwind-v4-38bdf8) ![APIs](https://img.shields.io/badge/APIs-Open--Meteo%20%7C%20aurora.you%20%7C%20skytime-green)
 
 ---
 
 ## Why this app?
 
-Most weather apps stop at “28° · Partly cloudy”. SkyLux answers the questions people actually have about the air and light around them:
+Most weather apps stop at "28° · Partly cloudy". SkyLux answers the questions people actually have about the air and light around them:
 
 | Question | Feature |
 |---|---|
@@ -16,7 +16,7 @@ Most weather apps stop at “28° · Partly cloudy”. SkyLux answers the questi
 | Is the air full of germs / mold? | **Air Germ Index** (0–100 heuristic) |
 | Will pollen ruin my day? | **Plant pollination** (CAMS pollen, Europe) |
 | Will my skin burn / tan? | **Skin & sun exposure** (burn time, SPF, Fitzpatrick type) |
-| What planets are up tonight? | **Tonight’s sky** (aurora.you + meteor showers) |
+| What planets are up tonight? | **Tonight's sky** (aurora.you + meteor showers) |
 | Is it a good night for stars? | **Stargazing score** (clouds + moon) |
 | Will I get a migraine? | **Headache / migraine risk** (pressure trend) |
 | How much solar power today? | **Rooftop solar calculator** (kWh yield) |
@@ -33,16 +33,16 @@ Most weather apps stop at “28° · Partly cloudy”. SkyLux answers the questi
 
 ### 🦠 Air biology · Germs & Pollen
 - **Germ Index (0–100)**: transparent heuristic from PM2.5, PM10, humidity, temperature, and AQI — labeled as an estimate, not a medical germ count
-- **Plant pollination**: grass, birch, alder, olive, mugwort, ragweed pollen grains/m³ from Open-Meteo CAMS (Europe coverage; shown honestly as “No data” elsewhere)
+- **Plant pollination**: grass, birch, alder, olive, mugwort, ragweed pollen grains/m³ from Open-Meteo CAMS (Europe coverage; shown honestly as "No data" elsewhere)
 - Progress bar + Low / Moderate / High tiers with actionable advice
 
 ### 🧴 Skin & sun exposure
 - **Time to burn** and **safe tan window** from UV index + Fitzpatrick skin type (I–VI selector, persisted)
 - Suggested **SPF** tier and plain-language advice (midday avoidance, cover-up)
-- Night state shows “Safe — no UV”
+- Night state shows "Safe — no UV"
 - Complements the existing vitamin-D and Health tile
 
-### 🌌 Tonight’s sky · Planets
+### 🌌 Tonight's sky · Planets
 - Visible planets above the horizon with **magnitude, altitude, direction**
 - Moon phase + illumination
 - Next **meteor shower** countdown (peak date, days out, ZHR)
@@ -62,7 +62,7 @@ Most weather apps stop at “28° · Partly cloudy”. SkyLux answers the questi
 - Full-screen canvas background driven by weather code, cloud cover, sun/moon position
 - Rain, snow, lightning, stars, parallax clouds — performance-capped (viewport-sized, 30 fps, pauses when tab hidden)
 
-### Rare “normal weather” extras
+### Rare "normal weather" extras
 - What to wear · headache/migraine risk (6h pressure drop) · stargazing score
 - Rooftop solar calculator (kW slider → kWh/day) · 7-day forecast with daily solar MJ
 - AQI color badges · wind direction arrow · count-up hero temperature
