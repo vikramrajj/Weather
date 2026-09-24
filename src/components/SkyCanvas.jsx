@@ -127,6 +127,9 @@ function SkyCanvas({ weatherCode, cloudCover, lat, lon, dateMs, isDay }) {
     const ctx = canvas.getContext('2d', { alpha: false });
     const kind = conditionKind(weatherCode);
     const stormy = kind === 'storm' || kind === 'rain' || kind === 'drizzle';
+    // Respect prefers-reduced-motion: static single paint, no loop
+    const reduceMotion = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
     let w = 0, h = 0, dpr = 1;
 
@@ -382,7 +385,14 @@ function SkyCanvas({ weatherCode, cloudCover, lat, lon, dateMs, isDay }) {
 
     resize();
     window.addEventListener('resize', resize);
-    raf = requestAnimationFrame(draw);
+    if (reduceMotion) {
+      // one static frame for reduced-motion users
+      paintBg();
+      buildSprites();
+      ctx.drawImage(bg, 0, 0);
+    } else {
+      raf = requestAnimationFrame(draw);
+    }
     return () => {
       cancelAnimationFrame(raf);
       clearInterval(astroTimer);

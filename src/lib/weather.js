@@ -260,6 +260,237 @@ export function skinExposure({ uv, skinType = 3 }) {
   };
 }
 
+// One-line decision brief: what should I do about umbrella / UV / comfort?
+export function decisionBrief({ c, hourly, nowIdx, skin, germ, luxInfo, isDemo }) {
+  if (!c) return { line: 'Loading conditions…', chips: [], tone: 'neutral' };
+  const chips = [];
+  const code = c.weather_code;
+  const kind = conditionKind(code);
+
+  // Umbrella: rain now or high precip probability in next 6h
+  let umbrella = null;
+  if (kind === 'rain' || kind === 'drizzle' || kind === 'storm' || c.precipitation > 0.2) {
+    umbrella = { text: 'Umbrella needed now', tone: 'alert' };
+  } else if (hourly?.precipitation_probability) {
+    let maxP = 0;
+    let when = null;
+    for (let i = nowIdx; i < Math.min(nowIdx + 7, hourly.precipitation_probability.length); i++) {
+      const p = hourly.precipitation_probability[i] ?? 0;
+      if (p > maxP) { maxP = p; when = new Date(hourly.time[i]).getHours(); }
+    }
+    if (maxP >= 60) umbrella = { text: `Rain likely by ${String(when).padStart(2, '0')}:00 (${maxP}%)`, tone: 'alert' };
+    else if (maxP >= 30) umbrella = { text: `Possible shower ~${String(when).padStart(2, '0')}:00 (${maxP}%)`, tone: 'warn' };
+    else umbrella = { text: 'Umbrella optional today', tone: 'ok' };
+  }
+  if (umbrella) chips.push(umbrella);
+
+  // UV / skin
+  const uv = c.uv_index ?? 0;
+  if (c.is_day && uv >= 6) chips.push({ text: `UV ${uv.toFixed(1)} — burn in ~${skin?.burnMin ?? '?'}m (type ${skin?.note?.match(/\\d+/)?.[0] ?? '3'})`, tone: 'alert' });
+  else if (c.is_day && uv >= 3) chips.push({ text: `Moderate UV ${uv.toFixed(1)} — SPF helps`, tone: 'warn' });
+  else if (c.is_day) chips.push({ text: 'Low UV — brief outdoor time fine', tone: 'ok' });
+
+  // Germ
+  if (germ && germ.score >= 65) chips.push({ text: 'High germ risk — ventilate carefully', tone: 'alert' });
+  else if (germ && germ.score >= 40) chips.push({ text: 'Moderate germ risk', tone: 'warn' });
+
+  // Comfort / clothing one-liner
+  const feels = c.apparent_temperature;
+  let comfort;
+  if (feels >= 32) comfort = { text: 'Heat stress — hydrate & shade', tone: 'alert' };
+  else if (feels >= 24) comfort = { text: 'Warm & comfortable outside', tone: 'ok' };
+  else if (feels >= 16) comfort = { text: 'Mild — light layer enough', tone: 'ok' };
+  else if (feels >= 8) comfort = { text: 'Chilly — jacket recommended', tone: 'warn' };
+  else comfort = { text: 'Cold — bundle up', tone: 'alert' };
+  chips.push(comfort);
+
+  if (!c.is_day) chips.push({ text: luxInfo?.label?.startsWith('Night') ? 'Clear night for sleep' : 'Night mode', tone: 'ok' });
+
+  const primary = umbrella?.text || comfort.text;
+  const line = isDemo ? `Demo · ${primary}` : primary;
+  return { line, chips: chips.slice(0, 4), tone: umbrella?.tone || comfort.tone };
+}
+
+// Sunset / golden-hour quality score 0–100 (cloud layers, humidity, wind, clarity).
+export function sunsetQuality({ cloudCover, humidity, windSpeed, ghiNearSet, visibility }) {
+  if (cloudCover == null) return { score: 0, label: 'Unknown', detail: 'No data', color: '#94a3b8' };
+  let score = 100;
+  // Mid-level clouds help scatter red; solid overcast kills it; clear can be dull.
+  const c = cloudCover;
+  if (c < 20) score -= 15; // too clear — less scatter
+  else if (c <= 55) score += 0; // sweet spot 20–55%
+  else if (c <= 75) score -= 20;
+  else score -= 55;
+  if (humidity != null) {
+    if (humidity > 85) score -= 20;
+    else if (humidity > 70) score -= 8;
+    else if (humidity < 30) score -= 10; // too dry — less aerosol glow
+  }
+  if (windSpeed != null && windSpeed > 40) score -= 15;
+  if (visibility != null && visibility < 3000) score -= 15;
+  if (ghiNearSet != null && ghiNearSet > 80) score += 5;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const label = score >= 80 ? 'Spectacular' : score >= 60 ? 'Pretty good' : score >= 40 ? 'Average' : score >= 20 ? 'Muted' : 'Washed out';
+  const color = score >= 80 ? '#fb923c' : score >= 60 ? '#fbbf24' : score >= 40 ? '#fde68a' : '#94a3b8';
+  const detail =
+    score >= 80 ? 'Scattered mid-level cloud + clean air — camera ready.'
+    : score >= 60 ? 'Decent glow expected near the horizon.'
+    : score >= 40 ? 'Some color, but clouds may flatten it.'
+    : score >= 20 ? 'Thick cloud / haze will mute the show.'
+    : 'Solid overcast — skip the sunset watch.';
+  return { score, label, detail, color };
+}
+
+// Best outdoor activity window in next 12h: score each hour, pick best run.
+export function outdoorWindow(hourly, nowIdx, { units: _units = 'metric' } = {}) {
+  if (!hourly?.time?.length || nowIdx < 0) return null;
+  const end = Math.min(nowIdx + 13, hourly.time.length);
+  const scored = [];
+  for (let i = nowIdx; i < end; i++) {
+    const t = hourly.time[i];
+    const hour = new Date(t).getHours();
+    const temp = hourly.temperature_2m[i] ?? 20;
+    const code = hourly.weather_code[i] ?? 1;
+    const pop = hourly.precipitation_probability?.[i] ?? 0;
+    const ghi = hourly.shortwave_radiation?.[i] ?? 0;
+    const kind = conditionKind(code);
+    let s = 100;
+    if (kind === 'storm') s -= 70;
+    else if (kind === 'rain') s -= 45;
+    else if (kind === 'drizzle') s -= 25;
+    else if (kind === 'snow') s -= 35;
+    else if (kind === 'fog') s -= 20;
+    if (pop >= 70) s -= 40;
+    else if (pop >= 40) s -= 20;
+    else if (pop >= 20) s -= 8;
+    if (temp > 34) s -= 35;
+    else if (temp > 30) s -= 15;
+    else if (temp < -5) s -= 30;
+    else if (temp < 0) s -= 12;
+    else if (temp >= 14 && temp <= 26) s += 8;
+    if (hour >= 11 && hour <= 15 && ghi > 500) s -= 10; // midday glare/heat
+    if (hour >= 6 && hour <= 10) s += 6; // morning sweet spot
+    if (hour >= 17 && hour <= 19) s += 6; // evening walk
+    scored.push({ i, t, hour, score: Math.max(0, Math.min(100, Math.round(s))), temp, kind, pop });
+  }
+  // Find longest top run (score >= 70)
+  let best = null, runStart = -1;
+  for (let k = 0; k <= scored.length; k++) {
+    const ok = k < scored.length && scored[k].score >= 70;
+    if (ok && runStart < 0) runStart = k;
+    if (!ok && runStart >= 0) {
+      const len = k - runStart;
+      const avg = Math.round(scored.slice(runStart, k).reduce((a, b) => a + b.score, 0) / len);
+      if (!best || len > best.len || (len === best.len && avg > best.avg)) {
+        best = { start: scored[runStart], end: scored[k - 1], len, avg };
+      }
+      runStart = -1;
+    }
+  }
+  if (!best) {
+    // fallback: single best hour
+    const top = [...scored].sort((a, b) => b.score - a.score)[0];
+    if (!top) return null;
+    best = { start: top, end: top, len: 1, avg: top.score };
+  }
+  const fmt = (h) => `${String(h).padStart(2, '0')}:00`;
+  const verdict = best.avg >= 80 ? 'Great window' : best.avg >= 65 ? 'Good window' : best.avg >= 50 ? 'OK window' : 'Poor — reschedule';
+  const color = best.avg >= 70 ? '#34d399' : best.avg >= 50 ? '#fbbf24' : '#f87171';
+  return {
+    ...best,
+    label: best.start.hour === best.end.hour ? fmt(best.start.hour) : `${fmt(best.start.hour)}–${fmt((best.end.hour + 1) % 24)}`,
+    verdict,
+    color,
+    peak: [...scored].sort((a, b) => b.score - a.score)[0],
+    hours: scored,
+  };
+}
+
+// Multi-model confidence: compare near-term temps across ECMWF / GFS / ICON.
+export async function fetchModelConfidence(lat, lon) {
+  const models = ['ecmwf_ifs025', 'gfs_global', 'icon_global'];
+  const names = { ecmwf_ifs025: 'ECMWF', gfs_global: 'GFS', icon_global: 'ICON' };
+  try {
+    const results = await Promise.all(
+      models.map((m) =>
+        fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m&forecast_days=2&models=${m}&timezone=auto`,
+        ).then((r) => r.json()).catch(() => null),
+      ),
+    );
+    const series = results.map((j, idx) => ({
+      id: models[idx],
+      name: names[models[idx]],
+      temps: j?.hourly?.temperature_2m ?? null,
+      times: j?.hourly?.time ?? null,
+    })).filter((s) => s.temps?.length);
+    if (series.length < 2) return { ok: false, series: [], spread: null, confidence: null };
+    // Spread over next 48h where all overlap
+    const n = Math.min(...series.map((s) => s.temps.length));
+    let maxSpread = 0, sumSpread = 0, cnt = 0;
+    for (let i = 0; i < n; i++) {
+      const vals = series.map((s) => s.temps[i]).filter((v) => v != null);
+      if (vals.length < 2) continue;
+      const sp = Math.max(...vals) - Math.min(...vals);
+      maxSpread = Math.max(maxSpread, sp);
+      sumSpread += sp;
+      cnt++;
+    }
+    const avgSpread = cnt ? sumSpread / cnt : 0;
+    // Confidence: models agree within 1.5°C avg → high; >3.5 → low
+    const confidence =
+      avgSpread <= 1.5 ? { label: 'High', color: '#34d399', note: 'Models agree — trust the number.' }
+      : avgSpread <= 2.5 ? { label: 'Medium', color: '#fbbf24', note: 'Slight model disagreement.' }
+      : { label: 'Low', color: '#f87171', note: 'Models disagree — treat forecast with caution.' };
+    return {
+      ok: true,
+      series,
+      avgSpread: +avgSpread.toFixed(1),
+      maxSpread: +maxSpread.toFixed(1),
+      confidence,
+    };
+  } catch {
+    return { ok: false, series: [], spread: null, confidence: null };
+  }
+}
+
+// Threshold alert rules evaluated client-side → Notification API.
+export const ALERT_TYPES = [
+  { id: 'rain', label: 'Rain in next hour', icon: '☔' },
+  { id: 'uv', label: 'UV ≥ 6 (high)', icon: '☀️' },
+  { id: 'germ', label: 'Germ index ≥ 65', icon: '🦠' },
+  { id: 'gust', label: 'Wind gusts ≥ 50 km/h', icon: '💨' },
+  { id: 'stargaze', label: 'Stargazing score ≥ 80', icon: '🔭' },
+];
+
+export function evaluateAlerts({ hourly, nowIdx, c, germ, stars, isDay }) {
+  const fired = [];
+  if (!hourly || nowIdx < 0) return fired;
+  // rain: precip prob or code in next 1–2h
+  let rainSoon = false;
+  for (let i = nowIdx; i < Math.min(nowIdx + 2, hourly.time.length); i++) {
+    const p = hourly.precipitation_probability?.[i] ?? 0;
+    const code = hourly.weather_code?.[i] ?? 0;
+    if (p >= 60 || [61, 63, 65, 80, 81, 82, 95, 96, 99].includes(code)) rainSoon = true;
+  }
+  if (rainSoon || (c && c.precipitation > 0.5)) {
+    fired.push({ id: 'rain', title: 'Rain expected soon', body: 'Precipitation likely within the next hour — grab an umbrella.' });
+  }
+  if (c && c.is_day && (c.uv_index ?? 0) >= 6) {
+    fired.push({ id: 'uv', title: `High UV (${c.uv_index.toFixed(1)})`, body: 'Use SPF 30+ and limit direct midday sun.' });
+  }
+  if (germ && germ.score >= 65) {
+    fired.push({ id: 'germ', title: `High germ risk (${germ.score}/100)`, body: germ.hint });
+  }
+  if (c && (c.wind_gusts_10m ?? 0) >= 50) {
+    fired.push({ id: 'gust', title: `Strong gusts (${Math.round(c.wind_gusts_10m)} km/h)`, body: 'Secure loose objects and take care outdoors.' });
+  }
+  if (stars && !isDay && stars.score >= 80) {
+    fired.push({ id: 'stargaze', title: `Excellent stargazing (${stars.score}/100)`, body: stars.detail });
+  }
+  return fired;
+}
+
 export async function fetchWeather(lat, lon) {
   const params = new URLSearchParams({
     latitude: lat, longitude: lon,

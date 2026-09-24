@@ -105,5 +105,25 @@ input[type="range"] {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+}
+
+/* Focus ring for keyboard users (visible on dark glass) */
+:focus-visible {
+  outline: 2px solid rgb(56 189 248 / 0.85);
+  outline-offset: 2px;
+}
+
+/* Screen-reader only utility (used for a11y helpers) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
